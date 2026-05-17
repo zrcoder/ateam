@@ -7,12 +7,12 @@ import (
 )
 
 type Person struct {
-	ID         string      `json:"id"`
-	Name       string      `json:"name"`
-	Email      string      `json:"email"`
-	Status     string      `json:"status"`
-	Computers  []Computer  `json:"computers"`
-	AgentIDs   []string    `json:"agent_ids"`
+	ID        string     `json:"id"`
+	Name      string     `json:"name"`
+	Email     string     `json:"email"`
+	Status    string     `json:"status"`
+	Computers []Computer `json:"computers"`
+	AgentIDs  []string   `json:"agent_ids"`
 }
 
 type Agent struct {
@@ -40,12 +40,12 @@ type Channel struct {
 }
 
 type Message struct {
-	ID          string    `json:"id"`
-	ChannelID   string    `json:"channel_id"`
-	AuthorID    string    `json:"author_id"`
-	AuthorType  string    `json:"author_type"`
-	Content     string    `json:"content"`
-	Timestamp   time.Time `json:"timestamp"`
+	ID         string    `json:"id"`
+	ChannelID  string    `json:"channel_id"`
+	AuthorID   string    `json:"author_id"`
+	AuthorType string    `json:"author_type"`
+	Content    string    `json:"content"`
+	Timestamp  time.Time `json:"timestamp"`
 }
 
 type Task struct {
@@ -133,12 +133,12 @@ func NewMessage(channelID, authorID, authorType, content string) (*Message, erro
 		return nil, ValidationError{Field: "authorType", Message: "author type must be person, agent, or system"}
 	}
 	return &Message{
-		ID:          uuid.New().String(),
-		ChannelID:   channelID,
-		AuthorID:    authorID,
-		AuthorType:  authorType,
-		Content:     content,
-		Timestamp:   time.Now(),
+		ID:         uuid.New().String(),
+		ChannelID:  channelID,
+		AuthorID:   authorID,
+		AuthorType: authorType,
+		Content:    content,
+		Timestamp:  time.Now(),
 	}, nil
 }
 
@@ -174,7 +174,7 @@ const (
 	TaskPriorityHigh   = "high"
 
 	AuthorTypePerson = "person"
-	AuthorTypeAgent = "agent"
+	AuthorTypeAgent  = "agent"
 	AuthorTypeSystem = "system"
 )
 

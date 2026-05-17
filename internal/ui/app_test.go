@@ -1,9 +1,11 @@
 package ui
 
 import (
-	"ateam/internal/models"
-	"ateam/internal/store"
 	"testing"
+
+	"github.com/zrcoder/ateam/internal/store"
+
+	"github.com/zrcoder/ateam/internal/models"
 )
 
 func TestNewModel(t *testing.T) {

@@ -1,9 +1,10 @@
 package store
 
 import (
-	"ateam/internal/models"
 	"sync"
 	"testing"
+
+	"github.com/zrcoder/ateam/internal/models"
 )
 
 func TestStore_AddMessage(t *testing.T) {

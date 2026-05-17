@@ -3,7 +3,7 @@ package store
 import (
 	"sync"
 
-	"ateam/internal/models"
+	"github.com/zrcoder/ateam/internal/models"
 )
 
 type Store struct {
@@ -67,22 +67,6 @@ func (s *Store) seed() {
 	}
 	s.Agents[agent2.ID] = agent2
 	person.AgentIDs = append(person.AgentIDs, agent2.ID)
-
-	// Helper to create messages with panic on error (seed data should always be valid)
-	newMsg := func(channelID, authorID, authorType, content string) *models.Message {
-		msg, err := models.NewMessage(channelID, authorID, authorType, content)
-		if err != nil {
-			panic("failed to create message: " + err.Error())
-		}
-		return msg
-	}
-
-	mockMessages := []*models.Message{
-		newMsg("channel-general", person.ID, models.AuthorTypePerson, "Welcome to **ateam**! This is the beginning of your channel."),
-		newMsg("channel-general", person.ID, models.AuthorTypePerson, "Makes sense. This feels like a production-ready TUI app already."),
-	}
-
-	s.Messages["channel-general"] = mockMessages
 
 	task1, err := models.NewTask("Setup project structure", person.ID)
 	if err != nil {

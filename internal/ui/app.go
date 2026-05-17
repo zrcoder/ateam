@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	"ateam/internal/models"
-	"ateam/internal/store"
-	"ateam/internal/ui/dialog"
+	"github.com/zrcoder/ateam/internal/ui/dialog"
+
+	"github.com/zrcoder/ateam/internal/store"
+
+	"github.com/zrcoder/ateam/internal/models"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textarea"
@@ -43,7 +45,7 @@ func NewModel(s *store.Store) *Model {
 	ta.SetHeight(3)
 
 	ta.KeyMap.InsertNewline = key.NewBinding(
-		key.WithKeys("shift+enter", "ctrl+j"),
+		key.WithKeys("shift+enter"),
 		key.WithHelp("shift+enter", "newline"),
 	)
 
@@ -141,7 +143,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.textarea.SetWidth(m.width)
 
-		m.viewport = viewport.New(viewport.WithWidth(m.width), viewport.WithHeight(m.height-5))
+		m.viewport = viewport.New(viewport.WithWidth(m.width), viewport.WithHeight(m.height-9))
 		m.viewport.YPosition = 1
 		m.viewportReady = true
 		m.viewport.SetContent(m.buildMessagesContent())
@@ -172,7 +174,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if msg.Key().Text == "/" && m.textarea.Value() == "" {
-			m.dialogOverlay.OpenDialog(dialog.NewHelpDialog(m.width, m.height))
+			m.dialogOverlay.OpenDialog(dialog.NewCommandsDialog(m.width, m.height))
 			m.dialogVisible = true
 			return m, nil
 		}
@@ -237,7 +239,7 @@ func (m *Model) handleCommand(text string) {
 			m.showError("/newtask requires a title, usage: /newtask <title>")
 		}
 	case "/help":
-		m.dialogOverlay.OpenDialog(dialog.NewHelpDialog(m.width, m.height))
+		m.dialogOverlay.OpenDialog(dialog.NewCommandsDialog(m.width, m.height))
 		m.dialogVisible = true
 	}
 }
@@ -309,8 +311,17 @@ func (m Model) View() tea.View {
 	border := m.renderBorder()
 	messages := m.viewport.View()
 	inputContent := m.renderInput()
+	statusBar := m.renderStatusBar()
 
-	mainContent := title + "\n" + border + "\n" + messages + "\n" + border + "\n" + inputContent
+	mainContent := lipgloss.JoinVertical(lipgloss.Left,
+		title,
+		border,
+		messages,
+		border,
+		inputContent,
+		border,
+		statusBar,
+	)
 
 	var content string
 	if m.dialogVisible {
@@ -362,4 +373,10 @@ func (m Model) renderBorder() string {
 
 func (m Model) renderInput() string {
 	return m.textarea.View()
+}
+
+func (m Model) renderStatusBar() string {
+	statusStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#6272A4"))
+	return statusStyle.Render(" / commands  ·  shift+enter newline  ·  ctrl+u scroll up  ·  ctrl+d scroll down  ·  ctrl+c quit")
 }

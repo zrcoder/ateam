@@ -3,10 +3,11 @@ package main
 import (
 	"os"
 
-	"ateam/internal/store"
-	"ateam/internal/ui"
+	"github.com/zrcoder/ateam/internal/ui"
 
-	"charm.land/bubbletea/v2"
+	"github.com/zrcoder/ateam/internal/store"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 func main() {
