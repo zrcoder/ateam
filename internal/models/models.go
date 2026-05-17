@@ -7,12 +7,12 @@ import (
 )
 
 type Person struct {
-	ID        string     `json:"id"`
-	Name      string     `json:"name"`
-	Email     string     `json:"email"`
-	Status    string     `json:"status"`
-	Computers []Computer `json:"computers"`
-	AgentIDs  []string   `json:"agent_ids"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Email     string `json:"email"`
+	Status    string `json:"status"`
+	AgentIDs  string `json:"agent_ids"`
+	Computers string `json:"computers"`
 }
 
 type Agent struct {
@@ -69,8 +69,8 @@ func NewPerson(name, email string) (*Person, error) {
 		Name:      name,
 		Email:     email,
 		Status:    StatusOnline,
-		Computers: []Computer{},
-		AgentIDs:  []string{},
+		Computers: "[]",
+		AgentIDs:  "[]",
 	}, nil
 }
 
@@ -274,7 +274,7 @@ type StoreInterface interface {
 	GetCurrentPerson() *Person
 	GetAgents() []*Agent
 	GetAgent(id string) *Agent
-	GetPeople() []*Person
+	GetPersons() []*Person
 	GetChannels() []*Channel
 	GetMessages(channelID string) []*Message
 	AddMessage(msg *Message)

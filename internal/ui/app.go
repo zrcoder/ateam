@@ -61,12 +61,15 @@ func NewModel(s *store.Store) *Model {
 }
 
 func (m *Model) loadMessages() {
-	messages := m.store.GetMessages(m.currentChannel)
+	messages, err := m.store.GetMessages(m.currentChannel)
+	if err != nil {
+		return
+	}
 	m.messages = make([]MessageRow, 0, len(messages))
 	for _, msg := range messages {
 		author := "You"
 		if msg.AuthorType == models.AuthorTypeAgent {
-			agent := m.store.GetAgent(msg.AuthorID)
+			agent, _ := m.store.GetAgent(msg.AuthorID)
 			if agent != nil {
 				author = agent.Name
 			}
@@ -275,7 +278,7 @@ func (m *Model) sendMessage(text string) {
 }
 
 func (m *Model) showTasks() {
-	tasks := m.store.GetTasks()
+	tasks, _ := m.store.GetTasks()
 	var b strings.Builder
 	b.WriteString("\n  tasks\n")
 	b.WriteString("  ─────\n")
@@ -345,7 +348,7 @@ func (m Model) View() tea.View {
 }
 
 func (m Model) renderTitle() string {
-	tasks := m.store.GetTasks()
+	tasks, _ := m.store.GetTasks()
 	taskCount := len(tasks)
 	left := " ATEAM "
 	right := fmt.Sprintf(" tasks: %d ", taskCount)

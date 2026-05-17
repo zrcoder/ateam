@@ -4,7 +4,7 @@
 
 - **Project Name**: ateam
 - **Type**: Terminal UI (TUI) Application
-- **Core Functionality**: A collaborative platform for coordinating multiple AI agents and real humans to build software together, featuring channels (like Slack), people, agents, computers, and tasks.
+- **Core Functionality**: A collaborative platform for coordinating multiple AI agents and real humans to build software together, featuring channels (like Slack), persons, agents, computers, and tasks.
 - **Target Users**: Software development teams wanting to integrate AI agents into their workflow
 
 ## 2. Technology Stack

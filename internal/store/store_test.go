@@ -1,293 +1,211 @@
 package store
 
 import (
-	"sync"
 	"testing"
 
 	"github.com/zrcoder/ateam/internal/models"
 )
 
-func TestStore_AddMessage(t *testing.T) {
-	s := &Store{
-		People:    make(map[string]*models.Person),
-		Agents:    make(map[string]*models.Agent),
-		Computers: make(map[string]*models.Computer),
-		Channels:  make(map[string]*models.Channel),
-		Messages:  make(map[string][]*models.Message),
-		Tasks:     make(map[string]*models.Task),
-	}
-
-	msg, err := models.NewMessage("channel-1", "author-1", models.AuthorTypePerson, "Hello")
+func TestStore_New(t *testing.T) {
+	tmpDir := t.TempDir()
+	s, err := New(tmpDir)
 	if err != nil {
-		t.Fatalf("failed to create message: %v", err)
+		t.Fatalf("New() error = %v", err)
+	}
+	defer s.Close()
+
+	if s == nil {
+		t.Fatal("expected non-nil store")
 	}
 
-	s.AddMessage(msg)
-
-	if len(s.Messages["channel-1"]) != 1 {
-		t.Errorf("expected 1 message, got %d", len(s.Messages["channel-1"]))
-	}
-	if s.Messages["channel-1"][0].Content != "Hello" {
-		t.Errorf("expected 'Hello', got %s", s.Messages["channel-1"][0].Content)
-	}
-}
-
-func TestStore_GetMessages(t *testing.T) {
-	s := &Store{
-		People:    make(map[string]*models.Person),
-		Agents:    make(map[string]*models.Agent),
-		Computers: make(map[string]*models.Computer),
-		Channels:  make(map[string]*models.Channel),
-		Messages:  make(map[string][]*models.Message),
-		Tasks:     make(map[string]*models.Task),
-	}
-
-	msg1, _ := models.NewMessage("channel-1", "author-1", models.AuthorTypePerson, "Hello")
-	msg2, _ := models.NewMessage("channel-1", "author-2", models.AuthorTypeAgent, "Hi there")
-	s.AddMessage(msg1)
-	s.AddMessage(msg2)
-
-	messages := s.GetMessages("channel-1")
-	if len(messages) != 2 {
-		t.Errorf("expected 2 messages, got %d", len(messages))
+	// Test that we can query the database
+	person := s.GetCurrentPerson()
+	if person == nil {
+		t.Error("expected to get current person after seed")
 	}
 }
 
-func TestStore_AddTask(t *testing.T) {
-	s := &Store{
-		People:    make(map[string]*models.Person),
-		Agents:    make(map[string]*models.Agent),
-		Computers: make(map[string]*models.Computer),
-		Channels:  make(map[string]*models.Channel),
-		Messages:  make(map[string][]*models.Message),
-		Tasks:     make(map[string]*models.Task),
-	}
-
-	task, err := models.NewTask("Test Task", "creator-1")
+func TestStore_Seed(t *testing.T) {
+	tmpDir := t.TempDir()
+	s, err := New(tmpDir)
 	if err != nil {
-		t.Fatalf("failed to create task: %v", err)
+		t.Fatalf("New() error = %v", err)
+	}
+	defer s.Close()
+
+	// Seed is already called in New(), calling again should be idempotent
+	if err := s.Seed(); err != nil {
+		t.Fatalf("Seed() error = %v", err)
 	}
 
-	s.AddTask(task)
-
-	if len(s.Tasks) != 1 {
-		t.Errorf("expected 1 task, got %d", len(s.Tasks))
+	// Check that seed data exists
+	person := s.GetCurrentPerson()
+	if person == nil {
+		t.Fatal("expected current person")
 	}
-	if s.Tasks[task.ID].Title != "Test Task" {
-		t.Errorf("expected 'Test Task', got %s", s.Tasks[task.ID].Title)
-	}
-}
-
-func TestStore_GetTasks(t *testing.T) {
-	s := &Store{
-		People:    make(map[string]*models.Person),
-		Agents:    make(map[string]*models.Agent),
-		Computers: make(map[string]*models.Computer),
-		Channels:  make(map[string]*models.Channel),
-		Messages:  make(map[string][]*models.Message),
-		Tasks:     make(map[string]*models.Task),
+	if person.Name != "You" {
+		t.Errorf("person.Name = %v, want 'You'", person.Name)
 	}
 
-	task1, _ := models.NewTask("Task 1", "creator-1")
-	task2, _ := models.NewTask("Task 2", "creator-1")
-	s.AddTask(task1)
-	s.AddTask(task2)
-
-	tasks := s.GetTasks()
+	tasks, err := s.GetTasks()
+	if err != nil {
+		t.Fatalf("GetTasks() error = %v", err)
+	}
 	if len(tasks) != 2 {
 		t.Errorf("expected 2 tasks, got %d", len(tasks))
 	}
-}
 
-func TestStore_AddAgent(t *testing.T) {
-	s := &Store{
-		People:    make(map[string]*models.Person),
-		Agents:    make(map[string]*models.Agent),
-		Computers: make(map[string]*models.Computer),
-		Channels:  make(map[string]*models.Channel),
-		Messages:  make(map[string][]*models.Message),
-		Tasks:     make(map[string]*models.Task),
-	}
-
-	person := &models.Person{
-		ID:       "person-1",
-		Name:     "Test Person",
-		Email:    "test@example.com",
-		Status:   models.StatusOnline,
-		AgentIDs: []string{},
-	}
-	s.People[person.ID] = person
-
-	agent, err := models.NewAgent("person-1", "dev-bot", "engineer", "claude", "claude-sonnet")
+	agents, err := s.GetAgents()
 	if err != nil {
-		t.Fatalf("failed to create agent: %v", err)
+		t.Fatalf("GetAgents() error = %v", err)
 	}
-
-	s.AddAgent(agent)
-
-	if len(s.Agents) != 1 {
-		t.Errorf("expected 1 agent, got %d", len(s.Agents))
-	}
-	if len(person.AgentIDs) != 1 {
-		t.Errorf("expected person to have 1 agent, got %d", len(person.AgentIDs))
-	}
-}
-
-func TestStore_GetAgents(t *testing.T) {
-	s := &Store{
-		People:    make(map[string]*models.Person),
-		Agents:    make(map[string]*models.Agent),
-		Computers: make(map[string]*models.Computer),
-		Channels:  make(map[string]*models.Channel),
-		Messages:  make(map[string][]*models.Message),
-		Tasks:     make(map[string]*models.Task),
-	}
-
-	agent1, _ := models.NewAgent("person-1", "dev-bot", "engineer", "claude", "model")
-	agent2, _ := models.NewAgent("person-1", "pm-bot", "product-manager", "opencode", "model")
-	s.AddAgent(agent1)
-	s.AddAgent(agent2)
-
-	agents := s.GetAgents()
 	if len(agents) != 2 {
 		t.Errorf("expected 2 agents, got %d", len(agents))
 	}
 }
 
-func TestStore_GetAgent(t *testing.T) {
-	s := &Store{
-		People:    make(map[string]*models.Person),
-		Agents:    make(map[string]*models.Agent),
-		Computers: make(map[string]*models.Computer),
-		Channels:  make(map[string]*models.Channel),
-		Messages:  make(map[string][]*models.Message),
-		Tasks:     make(map[string]*models.Task),
+func TestStore_AddMessage(t *testing.T) {
+	tmpDir := t.TempDir()
+	s, err := New(tmpDir)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer s.Close()
+
+	s.Seed()
+
+	msg := &models.Message{
+		ID:         "msg-1",
+		ChannelID:  "channel-general",
+		AuthorID:   "user-1",
+		AuthorType: models.AuthorTypePerson,
+		Content:    "Hello",
 	}
 
-	agent, _ := models.NewAgent("person-1", "dev-bot", "engineer", "claude", "model")
-	s.AddAgent(agent)
+	if err := s.AddMessage(msg); err != nil {
+		t.Fatalf("AddMessage() error = %v", err)
+	}
 
-	result := s.GetAgent(agent.ID)
+	messages, err := s.GetMessages("channel-general")
+	if err != nil {
+		t.Fatalf("GetMessages() error = %v", err)
+	}
+	if len(messages) != 1 {
+		t.Errorf("expected 1 message, got %d", len(messages))
+	}
+}
+
+func TestStore_AddTask(t *testing.T) {
+	tmpDir := t.TempDir()
+	s, err := New(tmpDir)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer s.Close()
+
+	s.Seed()
+
+	task := &models.Task{
+		ID:        "task-new",
+		Title:     "New Task",
+		CreatedBy: "user-1",
+	}
+
+	if err := s.AddTask(task); err != nil {
+		t.Fatalf("AddTask() error = %v", err)
+	}
+
+	tasks, err := s.GetTasks()
+	if err != nil {
+		t.Fatalf("GetTasks() error = %v", err)
+	}
+	if len(tasks) != 3 {
+		t.Errorf("expected 3 tasks, got %d", len(tasks))
+	}
+}
+
+func TestStore_GetAgent(t *testing.T) {
+	tmpDir := t.TempDir()
+	s, err := New(tmpDir)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer s.Close()
+
+	s.Seed()
+
+	agents, err := s.GetAgents()
+	if err != nil {
+		t.Fatalf("GetAgents() error = %v", err)
+	}
+	if len(agents) == 0 {
+		t.Fatal("expected agents")
+	}
+
+	agent := agents[0]
+	result, err := s.GetAgent(agent.ID)
+	if err != nil {
+		t.Fatalf("GetAgent() error = %v", err)
+	}
 	if result == nil {
 		t.Error("expected to find agent")
 	}
-	if result.Name != "dev-bot" {
-		t.Errorf("expected 'dev-bot', got %s", result.Name)
+	if result.Name != agent.Name {
+		t.Errorf("result.Name = %v, want %v", result.Name, agent.Name)
 	}
 
-	notFound := s.GetAgent("non-existent")
+	// Test non-existent agent
+	notFound, err := s.GetAgent("non-existent")
+	if err != nil {
+		t.Fatalf("GetAgent() error = %v", err)
+	}
 	if notFound != nil {
 		t.Error("expected nil for non-existent agent")
 	}
 }
 
-func TestStore_GetCurrentPerson(t *testing.T) {
-	s := &Store{
-		People:    make(map[string]*models.Person),
-		Agents:    make(map[string]*models.Agent),
-		Computers: make(map[string]*models.Computer),
-		Channels:  make(map[string]*models.Channel),
-		Messages:  make(map[string][]*models.Message),
-		Tasks:     make(map[string]*models.Task),
+func TestStore_Channels(t *testing.T) {
+	tmpDir := t.TempDir()
+	s, err := New(tmpDir)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
 	}
+	defer s.Close()
 
-	person := &models.Person{
-		ID:    "user-1",
-		Name:  "Test User",
-		Email: "test@example.com",
-	}
-	s.People["user-1"] = person
+	s.Seed()
 
-	result := s.GetCurrentPerson()
-	if result == nil {
-		t.Error("expected to find person")
+	channels, err := s.GetChannels()
+	if err != nil {
+		t.Fatalf("GetChannels() error = %v", err)
 	}
-	if result.Name != "Test User" {
-		t.Errorf("expected 'Test User', got %s", result.Name)
+	if len(channels) != 1 {
+		t.Errorf("expected 1 channel, got %d", len(channels))
 	}
 }
 
-func TestStore_GetChannels(t *testing.T) {
-	s := &Store{
-		People:    make(map[string]*models.Person),
-		Agents:    make(map[string]*models.Agent),
-		Computers: make(map[string]*models.Computer),
-		Channels:  make(map[string]*models.Channel),
-		Messages:  make(map[string][]*models.Message),
-		Tasks:     make(map[string]*models.Task),
+func TestStore_Persons(t *testing.T) {
+	tmpDir := t.TempDir()
+	s, err := New(tmpDir)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
 	}
+	defer s.Close()
 
-	ch1, _ := models.NewChannel("general", "General discussions")
-	ch2, _ := models.NewChannel("random", "Random talk")
-	s.Channels[ch1.ID] = ch1
-	s.Channels[ch2.ID] = ch2
+	s.Seed()
 
-	channels := s.GetChannels()
-	if len(channels) != 2 {
-		t.Errorf("expected 2 channels, got %d", len(channels))
+	persons, err := s.GetPersons()
+	if err != nil {
+		t.Fatalf("GetPersons() error = %v", err)
+	}
+	if len(persons) != 1 {
+		t.Errorf("expected 1 person, got %d", len(persons))
 	}
 }
 
-func TestStore_GetPeople(t *testing.T) {
-	s := &Store{
-		People:    make(map[string]*models.Person),
-		Agents:    make(map[string]*models.Agent),
-		Computers: make(map[string]*models.Computer),
-		Channels:  make(map[string]*models.Channel),
-		Messages:  make(map[string][]*models.Message),
-		Tasks:     make(map[string]*models.Task),
-	}
-
-	p1 := &models.Person{ID: "person-1", Name: "Person 1", Email: "p1@example.com"}
-	p2 := &models.Person{ID: "person-2", Name: "Person 2", Email: "p2@example.com"}
-	s.People[p1.ID] = p1
-	s.People[p2.ID] = p2
-
-	people := s.GetPeople()
-	if len(people) != 2 {
-		t.Errorf("expected 2 people, got %d", len(people))
-	}
-}
-
-func TestStore_ConcurrentAccess(t *testing.T) {
-	s := &Store{
-		People:    make(map[string]*models.Person),
-		Agents:    make(map[string]*models.Agent),
-		Computers: make(map[string]*models.Computer),
-		Channels:  make(map[string]*models.Channel),
-		Messages:  make(map[string][]*models.Message),
-		Tasks:     make(map[string]*models.Task),
-	}
-
-	var wg sync.WaitGroup
-	for i := range 100 {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			msg, _ := models.NewMessage("channel-1", "author-1", models.AuthorTypePerson, "Test message")
-			s.AddMessage(msg)
-		}(i)
-	}
-
-	wg.Wait()
-
-	if len(s.Messages["channel-1"]) != 100 {
-		t.Errorf("expected 100 messages, got %d", len(s.Messages["channel-1"]))
-	}
-}
-
-func TestStore_GetMessages_EmptyChannel(t *testing.T) {
-	s := &Store{
-		People:    make(map[string]*models.Person),
-		Agents:    make(map[string]*models.Agent),
-		Computers: make(map[string]*models.Computer),
-		Channels:  make(map[string]*models.Channel),
-		Messages:  make(map[string][]*models.Message),
-		Tasks:     make(map[string]*models.Task),
-	}
-
-	messages := s.GetMessages("non-existent")
-	if len(messages) != 0 {
-		t.Errorf("expected 0 messages, got %d", len(messages))
+func TestStore_DataDir(t *testing.T) {
+	// Test with invalid data dir
+	_, err := New("")
+	if err == nil {
+		t.Error("expected error for empty data dir")
 	}
 }

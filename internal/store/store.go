@@ -1,161 +1,243 @@
 package store
 
 import (
-	"sync"
+	"database/sql"
 
+	"github.com/zrcoder/ateam/internal/db"
 	"github.com/zrcoder/ateam/internal/models"
+
+	"github.com/google/uuid"
 )
 
 type Store struct {
-	mu        sync.RWMutex
-	People    map[string]*models.Person
-	Agents    map[string]*models.Agent
-	Computers map[string]*models.Computer
-	Channels  map[string]*models.Channel
-	Messages  map[string][]*models.Message
-	Tasks     map[string]*models.Task
+	db *sql.DB
 }
 
-func New() *Store {
-	s := &Store{
-		People:    make(map[string]*models.Person),
-		Agents:    make(map[string]*models.Agent),
-		Computers: make(map[string]*models.Computer),
-		Channels:  make(map[string]*models.Channel),
-		Messages:  make(map[string][]*models.Message),
-		Tasks:     make(map[string]*models.Task),
-	}
-	s.seed()
-	return s
-}
-
-func (s *Store) seed() {
-	person := &models.Person{
-		ID:        "user-1",
-		Name:      "You",
-		Email:     "you@example.com",
-		Status:    models.StatusOnline,
-		Computers: []models.Computer{},
-		AgentIDs:  []string{},
-	}
-	s.People[person.ID] = person
-
-	generalChannel := &models.Channel{
-		ID:      "channel-general",
-		Name:    "general",
-		Purpose: "General discussions",
-	}
-	s.Channels[generalChannel.ID] = generalChannel
-
-	computer, err := models.NewComputer(person.ID, "My MacBook", "localhost")
+func New(dataDir string) (*Store, error) {
+	database, err := db.Connect(dataDir)
 	if err != nil {
-		panic("failed to create computer: " + err.Error())
+		return nil, err
 	}
-	s.Computers[computer.ID] = computer
-	person.Computers = append(person.Computers, *computer)
+	s := &Store{db: database}
+	if err := s.seed(); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
 
-	agent1, err := models.NewAgent(person.ID, "dev-bot", "engineer", "claude", "claude-sonnet-4-7")
+func (s *Store) Seed() error {
+	return s.seed()
+}
+
+func (s *Store) seed() error {
+	// Check if current person exists
+	var count int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM person").Scan(&count)
 	if err != nil {
-		panic("failed to create agent: " + err.Error())
+		return err
 	}
-	s.Agents[agent1.ID] = agent1
-	person.AgentIDs = append(person.AgentIDs, agent1.ID)
+	if count > 0 {
+		return nil // Already seeded
+	}
 
-	agent2, err := models.NewAgent(person.ID, "pm-bot", "product-manager", "opencode", "gpt-4o")
+	personID := "user-1"
+	_, err = s.db.Exec(
+		`INSERT INTO person (id, name, email, status) VALUES (?, ?, ?, ?)`,
+		personID, "You", "you@example.com", models.StatusOnline,
+	)
 	if err != nil {
-		panic("failed to create agent: " + err.Error())
+		return err
 	}
-	s.Agents[agent2.ID] = agent2
-	person.AgentIDs = append(person.AgentIDs, agent2.ID)
 
-	task1, err := models.NewTask("Setup project structure", person.ID)
+	// Create default channel
+	channelID := "channel-general"
+	_, err = s.db.Exec(
+		`INSERT INTO channels (id, name, purpose) VALUES (?, ?, ?)`,
+		channelID, "general", "General discussions",
+	)
 	if err != nil {
-		panic("failed to create task: " + err.Error())
+		return err
 	}
-	s.Tasks[task1.ID] = task1
-	task2, err := models.NewTask("Implement TUI layout", person.ID)
+
+	// Create two agents
+	devBotID := uuid.New().String()
+	_, err = s.db.Exec(
+		`INSERT INTO agents (id, person_id, name, role, ai_type, model) VALUES (?, ?, ?, ?, ?, ?)`,
+		devBotID, personID, "dev-bot", "engineer", "claude", "claude-sonnet-4-7",
+	)
 	if err != nil {
-		panic("failed to create task: " + err.Error())
+		return err
 	}
-	task2.Status = models.TaskStatusInProgress
-	s.Tasks[task2.ID] = task2
-}
 
-func (s *Store) AddMessage(msg *models.Message) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.Messages[msg.ChannelID] = append(s.Messages[msg.ChannelID], msg)
-}
-
-func (s *Store) GetMessages(channelID string) []*models.Message {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.Messages[channelID]
-}
-
-func (s *Store) AddTask(task *models.Task) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.Tasks[task.ID] = task
-}
-
-func (s *Store) GetTasks() []*models.Task {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	tasks := make([]*models.Task, 0, len(s.Tasks))
-	for _, t := range s.Tasks {
-		tasks = append(tasks, t)
+	pmBotID := uuid.New().String()
+	_, err = s.db.Exec(
+		`INSERT INTO agents (id, person_id, name, role, ai_type, model) VALUES (?, ?, ?, ?, ?, ?)`,
+		pmBotID, personID, "pm-bot", "product-manager", "opencode", "gpt-4o",
+	)
+	if err != nil {
+		return err
 	}
-	return tasks
-}
 
-func (s *Store) AddAgent(agent *models.Agent) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.Agents[agent.ID] = agent
-	if person, ok := s.People[agent.PersonID]; ok {
-		person.AgentIDs = append(person.AgentIDs, agent.ID)
+	// Create two tasks
+	_, err = s.db.Exec(
+		`INSERT INTO tasks (id, title, created_by) VALUES (?, ?, ?)`,
+		uuid.New().String(), "Setup project structure", personID,
+	)
+	if err != nil {
+		return err
 	}
+
+	task2ID := uuid.New().String()
+	_, err = s.db.Exec(
+		`INSERT INTO tasks (id, title, status, created_by) VALUES (?, ?, ?, ?)`,
+		task2ID, "Implement TUI layout", models.TaskStatusInProgress, personID,
+	)
+	return err
 }
 
-func (s *Store) GetAgents() []*models.Agent {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	agents := make([]*models.Agent, 0, len(s.Agents))
-	for _, a := range s.Agents {
-		agents = append(agents, a)
+func (s *Store) AddMessage(msg *models.Message) error {
+	_, err := s.db.Exec(
+		`INSERT INTO messages (id, channel_id, author_id, author_type, content, timestamp) VALUES (?, ?, ?, ?, ?, ?)`,
+		msg.ID, msg.ChannelID, msg.AuthorID, msg.AuthorType, msg.Content, msg.Timestamp,
+	)
+	return err
+}
+
+func (s *Store) GetMessages(channelID string) ([]*models.Message, error) {
+	rows, err := s.db.Query(
+		`SELECT id, channel_id, author_id, author_type, content, timestamp FROM messages WHERE channel_id = ? ORDER BY timestamp ASC`,
+		channelID,
+	)
+	if err != nil {
+		return nil, err
 	}
-	return agents
+	defer rows.Close()
+
+	var messages []*models.Message
+	for rows.Next() {
+		var msg models.Message
+		if err := rows.Scan(&msg.ID, &msg.ChannelID, &msg.AuthorID, &msg.AuthorType, &msg.Content, &msg.Timestamp); err != nil {
+			return nil, err
+		}
+		messages = append(messages, &msg)
+	}
+	return messages, rows.Err()
 }
 
-func (s *Store) GetAgent(id string) *models.Agent {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.Agents[id]
+func (s *Store) AddTask(task *models.Task) error {
+	_, err := s.db.Exec(
+		`INSERT INTO tasks (id, title, description, status, priority, created_by, assignee_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		task.ID, task.Title, task.Description, task.Status, task.Priority, task.CreatedBy, task.AssigneeID,
+	)
+	return err
+}
+
+func (s *Store) GetTasks() ([]*models.Task, error) {
+	rows, err := s.db.Query(
+		`SELECT id, title, description, status, priority, created_by, COALESCE(assignee_id, '') FROM tasks`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tasks []*models.Task
+	for rows.Next() {
+		var task models.Task
+		if err := rows.Scan(&task.ID, &task.Title, &task.Description, &task.Status, &task.Priority, &task.CreatedBy, &task.AssigneeID); err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, &task)
+	}
+	return tasks, rows.Err()
+}
+
+func (s *Store) GetAgents() ([]*models.Agent, error) {
+	rows, err := s.db.Query(
+		`SELECT id, person_id, name, role, ai_type, model, status FROM agents`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var agents []*models.Agent
+	for rows.Next() {
+		var agent models.Agent
+		if err := rows.Scan(&agent.ID, &agent.PersonID, &agent.Name, &agent.Role, &agent.AIType, &agent.Model, &agent.Status); err != nil {
+			return nil, err
+		}
+		agents = append(agents, &agent)
+	}
+	return agents, rows.Err()
+}
+
+func (s *Store) GetAgent(id string) (*models.Agent, error) {
+	var agent models.Agent
+	err := s.db.QueryRow(
+		`SELECT id, person_id, name, role, ai_type, model, status FROM agents WHERE id = ?`,
+		id,
+	).Scan(&agent.ID, &agent.PersonID, &agent.Name, &agent.Role, &agent.AIType, &agent.Model, &agent.Status)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &agent, nil
 }
 
 func (s *Store) GetCurrentPerson() *models.Person {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.People["user-1"]
+	var person models.Person
+	err := s.db.QueryRow(
+		`SELECT id, name, email, status, agent_ids, computers FROM person LIMIT 1`,
+	).Scan(&person.ID, &person.Name, &person.Email, &person.Status, &person.AgentIDs, &person.Computers)
+	if err != nil {
+		return nil
+	}
+	return &person
 }
 
-func (s *Store) GetChannels() []*models.Channel {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	channels := make([]*models.Channel, 0, len(s.Channels))
-	for _, c := range s.Channels {
-		channels = append(channels, c)
+func (s *Store) GetChannels() ([]*models.Channel, error) {
+	rows, err := s.db.Query(`SELECT id, name, purpose FROM channels`)
+	if err != nil {
+		return nil, err
 	}
-	return channels
+	defer rows.Close()
+
+	var channels []*models.Channel
+	for rows.Next() {
+		var ch models.Channel
+		if err := rows.Scan(&ch.ID, &ch.Name, &ch.Purpose); err != nil {
+			return nil, err
+		}
+		channels = append(channels, &ch)
+	}
+	return channels, rows.Err()
 }
 
-func (s *Store) GetPeople() []*models.Person {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	people := make([]*models.Person, 0, len(s.People))
-	for _, p := range s.People {
-		people = append(people, p)
+func (s *Store) GetPersons() ([]*models.Person, error) {
+	rows, err := s.db.Query(`SELECT id, name, email, status, agent_ids, computers FROM person`)
+	if err != nil {
+		return nil, err
 	}
-	return people
+	defer rows.Close()
+
+	var persons []*models.Person
+	for rows.Next() {
+		var p models.Person
+		if err := rows.Scan(&p.ID, &p.Name, &p.Email, &p.Status, &p.AgentIDs, &p.Computers); err != nil {
+			return nil, err
+		}
+		persons = append(persons, &p)
+	}
+	return persons, rows.Err()
+}
+
+// Close closes the database connection and checkpoints WAL
+func (s *Store) Close() {
+	if s.db != nil {
+		s.db.Exec("PRAGMA wal_checkpoint(FULL)")
+		s.db.Close()
+	}
 }

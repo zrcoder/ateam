@@ -7,6 +7,7 @@ test:
 	go test ./...
 
 fmt:
+	go mod tidy
 	go fmt ./...
 
 lint: fmt
