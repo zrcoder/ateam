@@ -4,11 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/zrcoder/ateam/internal/ui/dialog"
-
-	"github.com/zrcoder/ateam/internal/store"
-
 	"github.com/zrcoder/ateam/internal/models"
+	"github.com/zrcoder/ateam/internal/store"
+	"github.com/zrcoder/ateam/internal/ui/dialog"
+	"github.com/zrcoder/ateam/pkg/ring"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textarea"
@@ -18,17 +17,20 @@ import (
 )
 
 type Model struct {
-	store           *store.Store
-	width           int
-	height          int
-	currentChannel  string
-	messages        []MessageRow
-	selectedMessage int
-	textarea        textarea.Model
-	dialogOverlay   *dialog.Overlay
-	dialogVisible   bool
-	viewport        viewport.Model
-	viewportReady   bool
+	store          *store.Store
+	width          int
+	height         int
+	currentChannel string
+	messages       *ring.Ring[MessageRow] // ring of MessageRow, size 20
+	messageCount   int                    // number of messages currently in ring
+	textarea       textarea.Model
+	dialogOverlay  *dialog.Overlay
+	dialogVisible  bool
+	viewport       viewport.Model
+	viewportReady  bool
+	messageOffset  int // offset in DB (0 = start, higher = older messages)
+	messageLimit   int
+	totalMessages  int // total messages in channel
 }
 
 type MessageRow struct {
@@ -50,88 +52,17 @@ func NewModel(s *store.Store) *Model {
 	)
 
 	return &Model{
-		store:           s,
-		currentChannel:  "channel-general",
-		messages:        []MessageRow{},
-		selectedMessage: 0,
-		textarea:        ta,
-		dialogOverlay:   dialog.NewOverlay(),
-		dialogVisible:   false,
+		store:          s,
+		currentChannel: "channel-general",
+		messages:       ring.New[MessageRow](20),
+		messageCount:   0,
+		textarea:       ta,
+		dialogOverlay:  dialog.NewOverlay(),
+		dialogVisible:  false,
+		messageOffset:  0,
+		messageLimit:   20,
+		totalMessages:  0,
 	}
-}
-
-func (m *Model) loadMessages() {
-	messages, err := m.store.GetMessages(m.currentChannel)
-	if err != nil {
-		return
-	}
-	m.messages = make([]MessageRow, 0, len(messages))
-	for _, msg := range messages {
-		author := "You"
-		if msg.AuthorType == models.AuthorTypeAgent {
-			agent, _ := m.store.GetAgent(msg.AuthorID)
-			if agent != nil {
-				author = agent.Name
-			}
-		}
-		m.messages = append(m.messages, MessageRow{
-			author:     author,
-			authorType: msg.AuthorType,
-			content:    msg.Content,
-			time:       msg.Timestamp.Format("15:04"),
-		})
-	}
-	if m.viewportReady {
-		m.viewport.SetContent(m.buildMessagesContent())
-	}
-}
-
-func (m *Model) buildMessagesContent() string {
-	var b strings.Builder
-	for _, msg := range m.messages {
-		isUser := msg.authorType == models.AuthorTypePerson
-
-		marker := "*"
-		markerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#50FA7B")).Bold(true)
-		if msg.authorType == models.AuthorTypeAgent {
-			marker = "A"
-			markerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF79C6")).Bold(true)
-		}
-
-		authorStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#8BE9FD")).
-			Bold(true)
-
-		timeStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#6272A4"))
-
-		contentStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#F8F8F2"))
-
-		headerPrefix := "  "
-		contentPrefix := "    "
-
-		if isUser {
-			headerPrefix = strings.Repeat(" ", max(0, m.width-30))
-			contentPrefix = strings.Repeat(" ", max(0, m.width-20))
-		}
-
-		b.WriteString(headerPrefix)
-		b.WriteString(markerStyle.Render(marker))
-		b.WriteString(" ")
-		b.WriteString(authorStyle.Render(msg.author))
-		b.WriteString(" ")
-		b.WriteString(timeStyle.Render(msg.time))
-		b.WriteString("\n")
-
-		for line := range strings.SplitSeq(msg.content, "\n") {
-			b.WriteString(contentPrefix)
-			b.WriteString(contentStyle.Render(line))
-			b.WriteString("\n")
-		}
-		b.WriteString("\n")
-	}
-	return b.String()
 }
 
 func (m *Model) Init() tea.Cmd {
@@ -181,6 +112,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.dialogVisible = true
 			return m, nil
 		}
+
 	}
 
 	if m.dialogVisible {
@@ -200,7 +132,154 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	m.textarea, cmd = m.textarea.Update(msg)
+
 	return m, cmd
+}
+
+func (m Model) View() tea.View {
+	title := m.renderTitle()
+	border := m.renderBorder()
+	messages := m.viewport.View()
+	inputContent := m.renderInput()
+	statusBar := m.renderStatusBar()
+
+	mainContent := lipgloss.JoinVertical(lipgloss.Left,
+		title,
+		border,
+		messages,
+		border,
+		inputContent,
+		border,
+		statusBar,
+	)
+
+	var content string
+	if m.dialogVisible {
+		dialogContent := m.dialogOverlay.View(m.width, m.height)
+		dialogLayer := lipgloss.NewLayer(dialogContent).
+			X((m.width - 55) / 2).
+			Y((m.height - 16) / 2).
+			Z(1)
+
+		content = lipgloss.NewCompositor(
+			lipgloss.NewLayer(mainContent),
+			dialogLayer,
+		).Render()
+	} else {
+		content = mainContent
+	}
+
+	v := tea.NewView(content)
+	v.AltScreen = true
+	return v
+}
+
+func (m *Model) loadMessages() {
+	messages, total, err := m.store.GetMessages(m.currentChannel, m.messageLimit, m.messageOffset)
+	if err != nil {
+		return
+	}
+	m.totalMessages = total
+
+	if len(messages) == 0 {
+		return
+	}
+
+	// DB returns newest-first (ORDER BY timestamp DESC), but we want oldest-first for display
+	// Reverse the slice so messages[0] = oldest, messages[len-1] = newest
+	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
+		messages[i], messages[j] = messages[j], messages[i]
+	}
+
+	// Clear the ring and refill with messages (oldest first)
+	m.messages.Clear()
+	for _, msg := range messages {
+		author := "You"
+		if msg.AuthorType == models.AuthorTypeAgent {
+			agent, _ := m.store.GetAgent(msg.AuthorID)
+			if agent != nil {
+				author = agent.Name
+			}
+		}
+		m.messages.PushBack(MessageRow{
+			author:     author,
+			authorType: msg.AuthorType,
+			content:    msg.Content,
+			time:       msg.Timestamp.Format("15:04"),
+		})
+	}
+	m.messageCount = m.messages.Len()
+
+	if m.viewportReady {
+		m.viewport.SetContent(m.buildMessagesContent())
+	}
+}
+
+func (m *Model) loadOlderMessages() {
+	// Check if we've reached the oldest messages
+	// We need to check if adding another page would exceed total
+	if m.messageOffset+m.messageLimit >= m.totalMessages {
+		return
+	}
+	m.messageOffset += 10
+	m.loadMessages()
+}
+
+func (m *Model) loadNewerMessages() {
+	if m.messageOffset == 0 {
+		return
+	}
+	m.messageOffset = max(0, m.messageOffset-10)
+	m.loadMessages()
+}
+
+func (m *Model) buildMessagesContent() string {
+	var b strings.Builder
+	iter := m.messages.Range()
+	for msg, ok := iter(); ok; msg, ok = iter() {
+		isUser := msg.authorType == models.AuthorTypePerson
+
+		marker := "*"
+		markerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#50FA7B")).Bold(true)
+		if msg.authorType == models.AuthorTypeAgent {
+			marker = "A"
+			markerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF79C6")).Bold(true)
+		}
+
+		authorStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#8BE9FD")).
+			Bold(true)
+
+		timeStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#6272A4"))
+
+		contentStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#F8F8F2"))
+
+		headerPrefix := "  "
+		contentPrefix := "    "
+
+		if isUser {
+			headerPrefix = strings.Repeat(" ", max(0, m.width-30))
+			contentPrefix = strings.Repeat(" ", max(0, m.width-20))
+		}
+
+		b.WriteString(headerPrefix)
+		b.WriteString(markerStyle.Render(marker))
+		b.WriteString(" ")
+		b.WriteString(authorStyle.Render(msg.author))
+		b.WriteString(" ")
+		b.WriteString(timeStyle.Render(msg.time))
+		b.WriteString("\n")
+
+		for line := range strings.SplitSeq(msg.content, "\n") {
+			b.WriteString(contentPrefix)
+			b.WriteString(contentStyle.Render(line))
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
 }
 
 func (m *Model) handleInput() {
@@ -307,44 +386,6 @@ func (m *Model) showTasks() {
 	if m.viewportReady {
 		m.viewport.GotoBottom()
 	}
-}
-
-func (m Model) View() tea.View {
-	title := m.renderTitle()
-	border := m.renderBorder()
-	messages := m.viewport.View()
-	inputContent := m.renderInput()
-	statusBar := m.renderStatusBar()
-
-	mainContent := lipgloss.JoinVertical(lipgloss.Left,
-		title,
-		border,
-		messages,
-		border,
-		inputContent,
-		border,
-		statusBar,
-	)
-
-	var content string
-	if m.dialogVisible {
-		dialogContent := m.dialogOverlay.View(m.width, m.height)
-		dialogLayer := lipgloss.NewLayer(dialogContent).
-			X((m.width - 55) / 2).
-			Y((m.height - 16) / 2).
-			Z(1)
-
-		content = lipgloss.NewCompositor(
-			lipgloss.NewLayer(mainContent),
-			dialogLayer,
-		).Render()
-	} else {
-		content = mainContent
-	}
-
-	v := tea.NewView(content)
-	v.AltScreen = true
-	return v
 }
 
 func (m Model) renderTitle() string {

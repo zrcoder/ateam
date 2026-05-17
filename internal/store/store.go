@@ -2,6 +2,8 @@ package store
 
 import (
 	"database/sql"
+	"os"
+	"path/filepath"
 
 	"github.com/zrcoder/ateam/internal/db"
 	"github.com/zrcoder/ateam/internal/models"
@@ -11,6 +13,16 @@ import (
 
 type Store struct {
 	db *sql.DB
+}
+
+// NewDefault creates a store with the default data directory ~/.ateam
+func NewDefault() (*Store, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	dataDir := filepath.Join(home, ".ateam")
+	return New(dataDir)
 }
 
 func New(dataDir string) (*Store, error) {
@@ -23,10 +35,6 @@ func New(dataDir string) (*Store, error) {
 		return nil, err
 	}
 	return s, nil
-}
-
-func (s *Store) Seed() error {
-	return s.seed()
 }
 
 func (s *Store) seed() error {
@@ -103,13 +111,20 @@ func (s *Store) AddMessage(msg *models.Message) error {
 	return err
 }
 
-func (s *Store) GetMessages(channelID string) ([]*models.Message, error) {
+func (s *Store) GetMessages(channelID string, limit, offset int) ([]*models.Message, int, error) {
+	// First query to get total count
+	var total int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM messages WHERE channel_id = ?", channelID).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	rows, err := s.db.Query(
-		`SELECT id, channel_id, author_id, author_type, content, timestamp FROM messages WHERE channel_id = ? ORDER BY timestamp ASC`,
-		channelID,
+		`SELECT id, channel_id, author_id, author_type, content, timestamp FROM messages WHERE channel_id = ? ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
+		channelID, limit, offset,
 	)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
@@ -117,11 +132,11 @@ func (s *Store) GetMessages(channelID string) ([]*models.Message, error) {
 	for rows.Next() {
 		var msg models.Message
 		if err := rows.Scan(&msg.ID, &msg.ChannelID, &msg.AuthorID, &msg.AuthorType, &msg.Content, &msg.Timestamp); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		messages = append(messages, &msg)
 	}
-	return messages, rows.Err()
+	return messages, total, rows.Err()
 }
 
 func (s *Store) AddTask(task *models.Task) error {

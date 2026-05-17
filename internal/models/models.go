@@ -269,15 +269,3 @@ func isValidEmail(email string) bool {
 	}
 	return dotAfterAt
 }
-
-type StoreInterface interface {
-	GetCurrentPerson() *Person
-	GetAgents() []*Agent
-	GetAgent(id string) *Agent
-	GetPersons() []*Person
-	GetChannels() []*Channel
-	GetMessages(channelID string) []*Message
-	AddMessage(msg *Message)
-	GetTasks() []*Task
-	AddTask(task *Task)
-}

@@ -25,7 +25,7 @@ func TestStore_New(t *testing.T) {
 	}
 }
 
-func TestStore_Seed(t *testing.T) {
+func TestStore_seed(t *testing.T) {
 	tmpDir := t.TempDir()
 	s, err := New(tmpDir)
 	if err != nil {
@@ -33,9 +33,9 @@ func TestStore_Seed(t *testing.T) {
 	}
 	defer s.Close()
 
-	// Seed is already called in New(), calling again should be idempotent
-	if err := s.Seed(); err != nil {
-		t.Fatalf("Seed() error = %v", err)
+	// seed is already called in New(), calling again should be idempotent
+	if err := s.seed(); err != nil {
+		t.Fatalf("seed() error = %v", err)
 	}
 
 	// Check that seed data exists
@@ -72,7 +72,7 @@ func TestStore_AddMessage(t *testing.T) {
 	}
 	defer s.Close()
 
-	s.Seed()
+	s.seed()
 
 	msg := &models.Message{
 		ID:         "msg-1",
@@ -86,7 +86,7 @@ func TestStore_AddMessage(t *testing.T) {
 		t.Fatalf("AddMessage() error = %v", err)
 	}
 
-	messages, err := s.GetMessages("channel-general")
+	messages, _, err := s.GetMessages("channel-general", 20, 0)
 	if err != nil {
 		t.Fatalf("GetMessages() error = %v", err)
 	}
@@ -103,7 +103,7 @@ func TestStore_AddTask(t *testing.T) {
 	}
 	defer s.Close()
 
-	s.Seed()
+	s.seed()
 
 	task := &models.Task{
 		ID:        "task-new",
@@ -132,7 +132,7 @@ func TestStore_GetAgent(t *testing.T) {
 	}
 	defer s.Close()
 
-	s.Seed()
+	s.seed()
 
 	agents, err := s.GetAgents()
 	if err != nil {
@@ -172,7 +172,7 @@ func TestStore_Channels(t *testing.T) {
 	}
 	defer s.Close()
 
-	s.Seed()
+	s.seed()
 
 	channels, err := s.GetChannels()
 	if err != nil {
@@ -191,7 +191,7 @@ func TestStore_Persons(t *testing.T) {
 	}
 	defer s.Close()
 
-	s.Seed()
+	s.seed()
 
 	persons, err := s.GetPersons()
 	if err != nil {

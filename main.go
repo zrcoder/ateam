@@ -1,7 +1,7 @@
 package main
 
 import (
-	"os"
+	"log"
 
 	"github.com/zrcoder/ateam/internal/store"
 	"github.com/zrcoder/ateam/internal/ui"
@@ -10,36 +10,14 @@ import (
 )
 
 func main() {
-	dataDir, err := getDataDir()
+	s, err := store.NewDefault()
 	if err != nil {
-		dataDir = "." // fallback to current directory
-	}
-
-	s, err := store.New(dataDir)
-	if err != nil {
-		os.Exit(1)
+		log.Fatal("Failed to create store:", err)
 	}
 	defer s.Close()
 
-	if err := s.Seed(); err != nil {
-		os.Exit(1)
-	}
-
 	p := tea.NewProgram(ui.NewModel(s), tea.WithoutSignalHandler())
-
 	if _, err := p.Run(); err != nil {
-		os.Exit(1)
+		log.Fatal("Failed to run program:", err)
 	}
-}
-
-func getDataDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	dataDir := home + "/.ateam"
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
-		return "", err
-	}
-	return dataDir, nil
 }
