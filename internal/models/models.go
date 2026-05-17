@@ -60,18 +60,27 @@ type Task struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-func NewPerson(name, email string) *Person {
+func NewPerson(name, email string) (*Person, error) {
+	if err := ValidatePerson(name, email); err != nil {
+		return nil, err
+	}
 	return &Person{
 		ID:        uuid.New().String(),
 		Name:      name,
 		Email:     email,
-		Status:    "online",
+		Status:    StatusOnline,
 		Computers: []Computer{},
 		AgentIDs:  []string{},
-	}
+	}, nil
 }
 
-func NewAgent(personID, name, role, aiType, model string) *Agent {
+func NewAgent(personID, name, role, aiType, model string) (*Agent, error) {
+	if err := ValidateAgent(name); err != nil {
+		return nil, err
+	}
+	if personID == "" {
+		return nil, ValidationError{Field: "personID", Message: "person ID cannot be empty"}
+	}
 	return &Agent{
 		ID:       uuid.New().String(),
 		PersonID: personID,
@@ -79,52 +88,76 @@ func NewAgent(personID, name, role, aiType, model string) *Agent {
 		Role:     role,
 		AIType:   aiType,
 		Model:    model,
-		Status:   "online",
-	}
+		Status:   StatusOnline,
+	}, nil
 }
 
-func NewComputer(personID, name, hostname string) *Computer {
+func NewComputer(personID, name, hostname string) (*Computer, error) {
+	if personID == "" {
+		return nil, ValidationError{Field: "personID", Message: "person ID cannot be empty"}
+	}
+	if name == "" {
+		return nil, ErrEmptyName
+	}
 	return &Computer{
 		ID:       uuid.New().String(),
 		PersonID: personID,
 		Name:     name,
 		Hostname: hostname,
-		Status:   "online",
-	}
+		Status:   StatusOnline,
+	}, nil
 }
 
-func NewChannel(name, purpose string) *Channel {
+func NewChannel(name, purpose string) (*Channel, error) {
+	if name == "" {
+		return nil, ErrEmptyName
+	}
 	return &Channel{
 		ID:      uuid.New().String(),
 		Name:    name,
 		Purpose: purpose,
-	}
+	}, nil
 }
 
-func NewMessage(channelID, authorID, authorType, content string) *Message {
+func NewMessage(channelID, authorID, authorType, content string) (*Message, error) {
+	if channelID == "" {
+		return nil, ValidationError{Field: "channelID", Message: "channel ID cannot be empty"}
+	}
+	if authorID == "" {
+		return nil, ValidationError{Field: "authorID", Message: "author ID cannot be empty"}
+	}
+	if err := ValidateMessage(content); err != nil {
+		return nil, err
+	}
+	if authorType != AuthorTypePerson && authorType != AuthorTypeAgent && authorType != AuthorTypeSystem {
+		return nil, ValidationError{Field: "authorType", Message: "author type must be person, agent, or system"}
+	}
 	return &Message{
 		ID:          uuid.New().String(),
 		ChannelID:   channelID,
 		AuthorID:    authorID,
 		AuthorType:  authorType,
 		Content:     content,
-		Timestamp:  time.Now(),
-	}
+		Timestamp:   time.Now(),
+	}, nil
 }
 
-func NewTask(title, createdBy string) *Task {
+func NewTask(title, createdBy string) (*Task, error) {
+	if err := ValidateTask(title); err != nil {
+		return nil, err
+	}
 	now := time.Now()
 	return &Task{
 		ID:          uuid.New().String(),
 		Title:       title,
 		Description: "",
-		Status:      "todo",
-		Priority:    "medium",
+		Status:      TaskStatusTodo,
+		Priority:    TaskPriorityMedium,
 		CreatedBy:   createdBy,
 		AssigneeID:  "",
 		CreatedAt:   now,
 		UpdatedAt:   now,
-	}
+	}, nil
 }
 
 const (
@@ -141,8 +174,101 @@ const (
 	TaskPriorityHigh   = "high"
 
 	AuthorTypePerson = "person"
-	AuthorTypeAgent  = "agent"
+	AuthorTypeAgent = "agent"
+	AuthorTypeSystem = "system"
 )
+
+// Validation errors
+var (
+	ErrEmptyName    = ValidationError{Field: "name", Message: "name cannot be empty"}
+	ErrEmptyEmail   = ValidationError{Field: "email", Message: "email cannot be empty"}
+	ErrInvalidEmail = ValidationError{Field: "email", Message: "email format is invalid"}
+	ErrEmptyTitle   = ValidationError{Field: "title", Message: "title cannot be empty"}
+	ErrEmptyContent = ValidationError{Field: "content", Message: "content cannot be empty"}
+)
+
+// ValidationError represents a validation error
+type ValidationError struct {
+	Field   string
+	Message string
+}
+
+func (e ValidationError) Error() string {
+	return e.Field + ": " + e.Message
+}
+
+// ValidatePerson validates person data
+func ValidatePerson(name, email string) error {
+	if name == "" {
+		return ErrEmptyName
+	}
+	if email == "" {
+		return ErrEmptyEmail
+	}
+	if !isValidEmail(email) {
+		return ErrInvalidEmail
+	}
+	return nil
+}
+
+// ValidateAgent validates agent data
+func ValidateAgent(name string) error {
+	if name == "" {
+		return ErrEmptyName
+	}
+	return nil
+}
+
+// ValidateTask validates task data
+func ValidateTask(title string) error {
+	if title == "" {
+		return ErrEmptyTitle
+	}
+	if len(title) > 200 {
+		return ValidationError{Field: "title", Message: "title cannot exceed 200 characters"}
+	}
+	return nil
+}
+
+// ValidateMessage validates message data
+func ValidateMessage(content string) error {
+	if content == "" {
+		return ErrEmptyContent
+	}
+	if len(content) > 10000 {
+		return ValidationError{Field: "content", Message: "content cannot exceed 10000 characters"}
+	}
+	return nil
+}
+
+// isValidEmail performs basic email validation
+func isValidEmail(email string) bool {
+	if len(email) < 3 || len(email) > 254 {
+		return false
+	}
+	atIndex := -1
+	for i, c := range email {
+		if c == '@' {
+			if atIndex != -1 {
+				return false
+			}
+			atIndex = i
+		}
+	}
+	if atIndex < 1 || atIndex == len(email)-1 {
+		return false
+	}
+	dotAfterAt := false
+	for i := atIndex + 1; i < len(email); i++ {
+		if email[i] == '.' {
+			if i == atIndex+1 || i == len(email)-1 {
+				return false
+			}
+			dotAfterAt = true
+		}
+	}
+	return dotAfterAt
+}
 
 type StoreInterface interface {
 	GetCurrentPerson() *Person

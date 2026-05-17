@@ -119,7 +119,7 @@ func (m *Model) buildMessagesContent() string {
 		b.WriteString(timeStyle.Render(msg.time))
 		b.WriteString("\n")
 
-		for _, line := range strings.Split(msg.content, "\n") {
+		for line := range strings.SplitSeq(msg.content, "\n") {
 			b.WriteString(contentPrefix)
 			b.WriteString(contentStyle.Render(line))
 			b.WriteString("\n")
@@ -223,10 +223,18 @@ func (m *Model) handleCommand(text string) {
 		if len(parts) > 1 {
 			title := strings.TrimSpace(parts[1])
 			if title != "" {
-				task := models.NewTask(title, m.store.GetCurrentPerson().ID)
+				task, err := models.NewTask(title, m.store.GetCurrentPerson().ID)
+				if err != nil {
+					m.showError("Failed to create task: " + err.Error())
+					return
+				}
 				m.store.AddTask(task)
 				m.loadMessages()
+			} else {
+				m.showError("/newtask requires a title")
 			}
+		} else {
+			m.showError("/newtask requires a title, usage: /newtask <title>")
 		}
 	case "/help":
 		m.dialogOverlay.OpenDialog(dialog.NewHelpDialog(m.width, m.height))
@@ -234,13 +242,29 @@ func (m *Model) handleCommand(text string) {
 	}
 }
 
+func (m *Model) showError(msg string) {
+	errMsg, err := models.NewMessage(m.currentChannel, "system", models.AuthorTypeSystem, "Error: "+msg)
+	if err != nil {
+		return
+	}
+	m.store.AddMessage(errMsg)
+	m.loadMessages()
+	if m.viewportReady {
+		m.viewport.GotoBottom()
+	}
+}
+
 func (m *Model) sendMessage(text string) {
-	msg := models.NewMessage(
+	msg, err := models.NewMessage(
 		m.currentChannel,
 		m.store.GetCurrentPerson().ID,
 		models.AuthorTypePerson,
 		text,
 	)
+	if err != nil {
+		m.showError("Failed to send message: " + err.Error())
+		return
+	}
 	m.store.AddMessage(msg)
 	m.loadMessages()
 	if m.viewportReady {
@@ -253,16 +277,26 @@ func (m *Model) showTasks() {
 	var b strings.Builder
 	b.WriteString("\n  tasks\n")
 	b.WriteString("  ─────\n")
-	for _, t := range tasks {
-		status := "[ ]"
-		if t.Status == models.TaskStatusInProgress {
-			status = "[~]"
-		} else if t.Status == models.TaskStatusDone {
-			status = "[x]"
-		}
-		b.WriteString(fmt.Sprintf("  %s %s\n", status, t.Title))
+	if len(tasks) == 0 {
+		b.WriteString("  (no tasks)\n")
 	}
-	msg := models.NewMessage(m.currentChannel, "system", "system", b.String())
+	for _, t := range tasks {
+		var status string
+		switch t.Status {
+		case models.TaskStatusInProgress:
+			status = "[~]"
+		case models.TaskStatusDone:
+			status = "[x]"
+		default:
+			status = "[ ]"
+		}
+		fmt.Fprintf(&b, "  %s %s\n", status, t.Title)
+	}
+	msg, err := models.NewMessage(m.currentChannel, "system", models.AuthorTypeSystem, b.String())
+	if err != nil {
+		m.showError("Failed to show tasks: " + err.Error())
+		return
+	}
 	m.store.AddMessage(msg)
 	m.loadMessages()
 	if m.viewportReady {
@@ -307,10 +341,7 @@ func (m Model) renderTitle() string {
 
 	leftLen := lipgloss.Width(left)
 	rightLen := lipgloss.Width(right)
-	available := m.width - leftLen - rightLen
-	if available < 0 {
-		available = 0
-	}
+	available := max(m.width-leftLen-rightLen, 0)
 	spacer := strings.Repeat(" ", available)
 
 	titleStyle := lipgloss.NewStyle().
