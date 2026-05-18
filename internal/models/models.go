@@ -44,6 +44,7 @@ type Message struct {
 	ChannelID  string    `json:"channel_id"`
 	AuthorID   string    `json:"author_id"`
 	AuthorType string    `json:"author_type"`
+	AuthorName string    `json:"-"` // computed: display name
 	Content    string    `json:"content"`
 	Timestamp  time.Time `json:"timestamp"`
 }

@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"cmp"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/zrcoder/ateam/internal/models"
@@ -16,28 +18,19 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
+const messageLimit = 20
+
 type Model struct {
 	store          *store.Store
 	width          int
 	height         int
 	currentChannel string
-	messages       *ring.Ring[MessageRow] // ring of MessageRow, size 20
-	messageCount   int                    // number of messages currently in ring
+	messages       *ring.Ring[models.Message] // ring of Message, size 20
 	textarea       textarea.Model
 	dialogOverlay  *dialog.Overlay
 	dialogVisible  bool
 	viewport       viewport.Model
 	viewportReady  bool
-	messageOffset  int // offset in DB (0 = start, higher = older messages)
-	messageLimit   int
-	totalMessages  int // total messages in channel
-}
-
-type MessageRow struct {
-	author     string
-	authorType string
-	content    string
-	time       string
 }
 
 func NewModel(s *store.Store) *Model {
@@ -54,14 +47,10 @@ func NewModel(s *store.Store) *Model {
 	return &Model{
 		store:          s,
 		currentChannel: "channel-general",
-		messages:       ring.New[MessageRow](20),
-		messageCount:   0,
+		messages:       ring.New[models.Message](messageLimit),
 		textarea:       ta,
 		dialogOverlay:  dialog.NewOverlay(),
 		dialogVisible:  false,
-		messageOffset:  0,
-		messageLimit:   20,
-		totalMessages:  0,
 	}
 }
 
@@ -175,73 +164,36 @@ func (m Model) View() tea.View {
 }
 
 func (m *Model) loadMessages() {
-	messages, total, err := m.store.GetMessages(m.currentChannel, m.messageLimit, m.messageOffset)
+	messages, _, err := m.store.GetMessages(m.currentChannel, messageLimit, 0)
 	if err != nil {
 		return
 	}
-	m.totalMessages = total
 
-	if len(messages) == 0 {
-		return
-	}
-
-	// DB returns newest-first (ORDER BY timestamp DESC), but we want oldest-first for display
-	// Reverse the slice so messages[0] = oldest, messages[len-1] = newest
-	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
-		messages[i], messages[j] = messages[j], messages[i]
-	}
+	// DB returns newest-first (ORDER BY timestamp DESC), reverse for oldest-first display
+	slices.Reverse(messages)
 
 	// Clear the ring and refill with messages (oldest first)
 	m.messages.Clear()
 	for _, msg := range messages {
-		author := "You"
 		if msg.AuthorType == models.AuthorTypeAgent {
 			agent, _ := m.store.GetAgent(msg.AuthorID)
 			if agent != nil {
-				author = agent.Name
+				msg.AuthorName = agent.Name
 			}
 		}
-		m.messages.PushBack(MessageRow{
-			author:     author,
-			authorType: msg.AuthorType,
-			content:    msg.Content,
-			time:       msg.Timestamp.Format("15:04"),
-		})
+		m.messages.PushBack(*msg)
 	}
-	m.messageCount = m.messages.Len()
-
-	if m.viewportReady {
-		m.viewport.SetContent(m.buildMessagesContent())
-	}
-}
-
-func (m *Model) loadOlderMessages() {
-	// Check if we've reached the oldest messages
-	// We need to check if adding another page would exceed total
-	if m.messageOffset+m.messageLimit >= m.totalMessages {
-		return
-	}
-	m.messageOffset += 10
-	m.loadMessages()
-}
-
-func (m *Model) loadNewerMessages() {
-	if m.messageOffset == 0 {
-		return
-	}
-	m.messageOffset = max(0, m.messageOffset-10)
-	m.loadMessages()
 }
 
 func (m *Model) buildMessagesContent() string {
 	var b strings.Builder
 	iter := m.messages.Range()
 	for msg, ok := iter(); ok; msg, ok = iter() {
-		isUser := msg.authorType == models.AuthorTypePerson
+		isUser := msg.AuthorType == models.AuthorTypePerson
 
 		marker := "*"
 		markerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#50FA7B")).Bold(true)
-		if msg.authorType == models.AuthorTypeAgent {
+		if msg.AuthorType == models.AuthorTypeAgent {
 			marker = "A"
 			markerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF79C6")).Bold(true)
 		}
@@ -267,12 +219,13 @@ func (m *Model) buildMessagesContent() string {
 		b.WriteString(headerPrefix)
 		b.WriteString(markerStyle.Render(marker))
 		b.WriteString(" ")
-		b.WriteString(authorStyle.Render(msg.author))
-		b.WriteString(" ")
-		b.WriteString(timeStyle.Render(msg.time))
+		authorName := cmp.Or(msg.AuthorName, "You")
+		b.WriteString(authorStyle.Render(authorName))
+		timeFormatted := msg.Timestamp.Format("15:04")
+		b.WriteString(timeStyle.Render(timeFormatted))
 		b.WriteString("\n")
 
-		for line := range strings.SplitSeq(msg.content, "\n") {
+		for line := range strings.SplitSeq(msg.Content, "\n") {
 			b.WriteString(contentPrefix)
 			b.WriteString(contentStyle.Render(line))
 			b.WriteString("\n")
@@ -288,42 +241,8 @@ func (m *Model) handleInput() {
 		return
 	}
 
-	if strings.HasPrefix(text, "/") {
-		m.handleCommand(text)
-	} else {
-		m.sendMessage(text)
-	}
+	m.sendMessage(text)
 	m.textarea.Reset()
-}
-
-func (m *Model) handleCommand(text string) {
-	parts := strings.SplitN(text, " ", 2)
-	cmd := strings.ToLower(parts[0])
-
-	switch cmd {
-	case "/tasks":
-		m.showTasks()
-	case "/newtask":
-		if len(parts) > 1 {
-			title := strings.TrimSpace(parts[1])
-			if title != "" {
-				task, err := models.NewTask(title, m.store.GetCurrentPerson().ID)
-				if err != nil {
-					m.showError("Failed to create task: " + err.Error())
-					return
-				}
-				m.store.AddTask(task)
-				m.loadMessages()
-			} else {
-				m.showError("/newtask requires a title")
-			}
-		} else {
-			m.showError("/newtask requires a title, usage: /newtask <title>")
-		}
-	case "/help":
-		m.dialogOverlay.OpenDialog(dialog.NewCommandsDialog(m.width, m.height))
-		m.dialogVisible = true
-	}
 }
 
 func (m *Model) showError(msg string) {
@@ -350,40 +269,9 @@ func (m *Model) sendMessage(text string) {
 		return
 	}
 	m.store.AddMessage(msg)
-	m.loadMessages()
+	m.messages.PushBack(*msg)
 	if m.viewportReady {
-		m.viewport.GotoBottom()
-	}
-}
-
-func (m *Model) showTasks() {
-	tasks, _ := m.store.GetTasks()
-	var b strings.Builder
-	b.WriteString("\n  tasks\n")
-	b.WriteString("  ─────\n")
-	if len(tasks) == 0 {
-		b.WriteString("  (no tasks)\n")
-	}
-	for _, t := range tasks {
-		var status string
-		switch t.Status {
-		case models.TaskStatusInProgress:
-			status = "[~]"
-		case models.TaskStatusDone:
-			status = "[x]"
-		default:
-			status = "[ ]"
-		}
-		fmt.Fprintf(&b, "  %s %s\n", status, t.Title)
-	}
-	msg, err := models.NewMessage(m.currentChannel, "system", models.AuthorTypeSystem, b.String())
-	if err != nil {
-		m.showError("Failed to show tasks: " + err.Error())
-		return
-	}
-	m.store.AddMessage(msg)
-	m.loadMessages()
-	if m.viewportReady {
+		m.viewport.SetContent(m.buildMessagesContent())
 		m.viewport.GotoBottom()
 	}
 }
