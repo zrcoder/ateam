@@ -1,10 +1,14 @@
 package dialog
 
 import (
+	"strings"
+
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
+
+type ActionClose struct{}
 
 // Dialog styles
 var (
@@ -21,10 +25,6 @@ var (
 			Foreground(lipgloss.Color("#F8F8F2"))
 )
 
-const (
-	Sep = "───────"
-)
-
 // Base provides common dialog functionality to be embedded in dialog implementations.
 type Base struct {
 	title     string
@@ -36,8 +36,8 @@ type Base struct {
 	helpStyle lipgloss.Style
 }
 
-func NewBase(title string, width, height int) Base {
-	return Base{
+func NewBase(title string, width, height int) *Base {
+	return &Base{
 		title:   title,
 		width:   width,
 		height:  height,
@@ -67,10 +67,22 @@ func (b *Base) DialogStyle() lipgloss.Style {
 	return DialogStyle.Width(b.dialogW).Height(b.dialogH)
 }
 
-func (b *Base) Content(content string) string {
-	return lipgloss.JoinVertical(lipgloss.Left,
-		lipgloss.JoinHorizontal(lipgloss.Top, TitleStyle.Render(b.title), b.helpStyle.MarginLeft(30).Render("[x] esc")),
-		Sep,
+func (b *Base) WrapView(content string) string {
+	content = lipgloss.JoinVertical(lipgloss.Left,
+		lipgloss.JoinHorizontal(lipgloss.Top,
+			TitleStyle.Render(b.title),
+			b.helpStyle.MarginLeft(b.dialogW-11).
+				Render("esc [x]")),
+		b.Divider(),
 		ContentStyle.Render(content),
 	)
+	return b.DialogStyle().Render(content)
+}
+
+func (b *Base) View() string {
+	return b.WrapView("")
+}
+
+func (b *Base) Divider() string {
+	return strings.Repeat("-", b.dialogW)
 }

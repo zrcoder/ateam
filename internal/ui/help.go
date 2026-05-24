@@ -1,12 +1,11 @@
-package dialog
+package ui
 
 import (
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
 	"charm.land/lipgloss/v2"
+	"github.com/zrcoder/ateam/internal/ui/dialog"
 )
-
-const HelpID = "help"
 
 type KeyMap struct {
 	Newline    key.Binding
@@ -35,13 +34,13 @@ func (km KeyMap) ShortHelp() []key.Binding {
 
 func (km KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{km.Newline},
 		{km.ScrollUp, km.ScrollDown},
+		{km.Newline},
 	}
 }
 
 type HelpDialog struct {
-	Base
+	*dialog.Base
 	keyHelp help.Model
 	keyMap  KeyMap
 }
@@ -51,25 +50,22 @@ func NewHelpDialog(width, height int) *HelpDialog {
 	h.keyMap = DefaultKeyMap
 	h.keyHelp = help.New()
 	h.keyHelp.ShowAll = true
-	h.Base = NewBase("Help", width, height)
+	h.Base = dialog.NewBase("Help", width, height)
 	return h
 }
 
-func (*HelpDialog) ID() string { return HelpID }
-
-func (h *HelpDialog) View(width, height int) string {
+func (h *HelpDialog) View() string {
 
 	content := lipgloss.JoinVertical(lipgloss.Left,
 
-		ContentStyle.Render(`
+		dialog.ContentStyle.Render(`
 /tasks           list all tasks
 /newtask <title> create a new task
 /help            show this help`),
 		"",
-		TitleStyle.Render("Key bindings"),
+		h.Divider(),
+		"Key bindings",
 		h.keyHelp.View(h.keyMap),
 	)
-	return h.Base.Content(content)
+	return h.WrapView(content)
 }
-
-type ActionClose struct{}

@@ -87,14 +87,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if msg.Key().Code == tea.KeyEsc {
 			if m.dialogVisible {
-				m.dialogOverlay.CloseDialog(dialog.HelpID)
+				m.dialogOverlay.CloseDialog()
 				m.dialogVisible = false
 				return m, nil
 			}
 		}
 
 		if msg.Key().Text == "/" && m.textarea.Value() == "" {
-			m.dialogOverlay.OpenDialog(dialog.NewHelpDialog(m.width, m.height))
+			m.dialogOverlay.OpenDialog(NewHelpDialog(m.width, m.height))
 			m.dialogVisible = true
 			return m, nil
 		}
@@ -104,7 +104,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.dialogVisible {
 		if a := m.dialogOverlay.Update(msg); a != nil {
 			if _, ok := a.(dialog.ActionClose); ok {
-				m.dialogOverlay.CloseDialog(dialog.HelpID)
+				m.dialogOverlay.CloseDialog()
 				m.dialogVisible = false
 			}
 		}

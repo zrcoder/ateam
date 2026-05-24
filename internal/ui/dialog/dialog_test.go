@@ -9,7 +9,7 @@ func TestNewOverlay(t *testing.T) {
 	if overlay == nil {
 		t.Error("expected non-nil overlay")
 	}
-	if overlay.HasDialogs() {
+	if overlay.dialog != nil {
 		t.Error("expected no dialogs initially")
 	}
 }
@@ -17,30 +17,17 @@ func TestNewOverlay(t *testing.T) {
 func TestOverlay_OpenAndCloseDialog(t *testing.T) {
 	overlay := NewOverlay()
 
-	dialog := NewHelpDialog(80, 24)
+	dialog := NewBase("Test Dialog", 80, 24)
 	overlay.OpenDialog(dialog)
 
-	if !overlay.HasDialogs() {
+	if overlay.dialog == nil {
 		t.Error("expected dialog to be open")
 	}
 
-	overlay.CloseDialog(HelpID)
+	overlay.CloseDialog()
 
-	if overlay.HasDialogs() {
+	if overlay.dialog != nil {
 		t.Error("expected dialog to be closed")
-	}
-}
-
-func TestOverlay_CloseDialog_NotFound(t *testing.T) {
-	overlay := NewOverlay()
-
-	dialog := NewHelpDialog(80, 24)
-	overlay.OpenDialog(dialog)
-
-	overlay.CloseDialog("non-existent")
-
-	if !overlay.HasDialogs() {
-		t.Error("dialog should still be open")
 	}
 }
 
@@ -56,7 +43,7 @@ func TestOverlay_View_Empty(t *testing.T) {
 func TestOverlay_View_WithDialog(t *testing.T) {
 	overlay := NewOverlay()
 
-	dialog := NewHelpDialog(80, 24)
+	dialog := NewBase("Test Dialog", 80, 24)
 	overlay.OpenDialog(dialog)
 
 	view := overlay.View(80, 24)
@@ -65,15 +52,8 @@ func TestOverlay_View_WithDialog(t *testing.T) {
 	}
 }
 
-func TestCommandsDialog_ID(t *testing.T) {
-	dialog := NewHelpDialog(80, 24)
-	if dialog.ID() != HelpID {
-		t.Errorf("expected %s, got %s", HelpID, dialog.ID())
-	}
-}
-
 func TestCommandsDialog_HandleMsg_Escape(t *testing.T) {
-	dialog := NewHelpDialog(80, 24)
+	dialog := NewBase("Test Dialog", 80, 24)
 
 	action := dialog.HandleMsg(nil)
 	if action != nil {
@@ -82,18 +62,18 @@ func TestCommandsDialog_HandleMsg_Escape(t *testing.T) {
 }
 
 func TestCommandsDialog_View(t *testing.T) {
-	dialog := NewHelpDialog(80, 24)
+	dialog := NewBase("Test Dialog", 80, 24)
 
-	view := dialog.View(80, 24)
+	view := dialog.View()
 	if view == "" {
 		t.Error("expected non-empty view")
 	}
 }
 
 func TestCommandsDialog_View_InvalidWidth(t *testing.T) {
-	dialog := NewHelpDialog(80, 24)
+	dialog := NewBase("Test Dialog", 80, 24)
 
-	view := dialog.View(5, 24)
+	view := dialog.View()
 	if view == "" {
 		t.Error("expected non-empty view even with small width")
 	}
