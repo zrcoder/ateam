@@ -1,59 +1,75 @@
 package dialog
 
 import (
+	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
-	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
 
 const HelpID = "help"
 
-type CommandsDialog struct {
-	width  int
-	height int
-	keyMap struct {
-		Close key.Binding
+type KeyMap struct {
+	Newline    key.Binding
+	ScrollUp   key.Binding
+	ScrollDown key.Binding
+}
+
+var DefaultKeyMap = KeyMap{
+	Newline: key.NewBinding(
+		key.WithKeys("shift+enter"),
+		key.WithHelp("shift+enter", "newline"),
+	),
+	ScrollUp: key.NewBinding(
+		key.WithKeys("ctrl+u"),
+		key.WithHelp("ctrl+u", "scroll up"),
+	),
+	ScrollDown: key.NewBinding(
+		key.WithKeys("ctrl+d"),
+		key.WithHelp("ctrl+d", "scroll down"),
+	),
+}
+
+func (km KeyMap) ShortHelp() []key.Binding {
+	return []key.Binding{km.Newline, km.ScrollUp, km.ScrollDown}
+}
+
+func (km KeyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{km.Newline},
+		{km.ScrollUp, km.ScrollDown},
 	}
 }
 
-func NewCommandsDialog(width, height int) *CommandsDialog {
-	h := &CommandsDialog{width: width, height: height}
-	h.keyMap.Close = CloseKey
+type HelpDialog struct {
+	Base
+	keyHelp help.Model
+	keyMap  KeyMap
+}
+
+func NewHelpDialog(width, height int) *HelpDialog {
+	h := &HelpDialog{}
+	h.keyMap = DefaultKeyMap
+	h.keyHelp = help.New()
+	h.keyHelp.ShowAll = true
+	h.Base = NewBase("Help", width, height)
 	return h
 }
 
-func (*CommandsDialog) ID() string { return HelpID }
+func (*HelpDialog) ID() string { return HelpID }
 
-func (h *CommandsDialog) HandleMsg(msg tea.Msg) Action {
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		if key.Matches(msg, h.keyMap.Close) {
-			return ActionClose{}
-		}
-	}
-	return nil
-}
+func (h *HelpDialog) View(width, height int) string {
 
-func (h *CommandsDialog) View(width, height int) string {
-	content := `───────
+	content := lipgloss.JoinVertical(lipgloss.Left,
+
+		ContentStyle.Render(`
 /tasks           list all tasks
 /newtask <title> create a new task
-/help            show this help`
-
-	dialogWidth := min(width-20, 55)
-	dialogHeight := 16
-
-	dialogStyle := DialogStyle.
-		Width(dialogWidth).
-		Height(dialogHeight)
-
-	return dialogStyle.Render(
-		lipgloss.JoinVertical(lipgloss.Left,
-			TitleStyle.Render("commands"),
-			ContentStyle.Render(content),
-			HelpStyle.Render("esc to close"),
-		),
+/help            show this help`),
+		"",
+		TitleStyle.Render("Key bindings"),
+		h.keyHelp.View(h.keyMap),
 	)
+	return h.Base.Content(content)
 }
 
 type ActionClose struct{}

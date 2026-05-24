@@ -1,16 +1,11 @@
 package dialog
 
 import (
-	"charm.land/bubbles/v2/key"
+	"slices"
+
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	uv "github.com/charmbracelet/ultraviolet"
-)
-
-// CloseKey is the default key binding to close dialogs.
-var CloseKey = key.NewBinding(
-	key.WithKeys("esc"),
-	key.WithHelp("esc", "close"),
 )
 
 // Action represents an action taken in a dialog after handling a message.
@@ -43,7 +38,7 @@ func (d *Overlay) OpenDialog(dialog Dialog) {
 func (d *Overlay) CloseDialog(id string) {
 	for i, dialog := range d.dialogs {
 		if dialog.ID() == id {
-			d.dialogs = append(d.dialogs[:i], d.dialogs[i+1:]...)
+			d.dialogs = slices.Delete(d.dialogs, i, i+1)
 			return
 		}
 	}
@@ -71,21 +66,3 @@ func DrawCenter(scr uv.Screen, area uv.Rectangle, view string) {
 	r := uv.Rect(x, y, width, height)
 	uv.NewStyledString(view).Draw(scr, r)
 }
-
-// Dialog styles
-var (
-	DialogStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#6272A4")).
-			Padding(1, 2)
-
-	TitleStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#8BE9FD")).
-			Bold(true)
-
-	ContentStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#F8F8F2"))
-
-	HelpStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#6272A4"))
-)

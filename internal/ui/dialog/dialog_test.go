@@ -17,7 +17,7 @@ func TestNewOverlay(t *testing.T) {
 func TestOverlay_OpenAndCloseDialog(t *testing.T) {
 	overlay := NewOverlay()
 
-	dialog := NewCommandsDialog(80, 24)
+	dialog := NewHelpDialog(80, 24)
 	overlay.OpenDialog(dialog)
 
 	if !overlay.HasDialogs() {
@@ -34,7 +34,7 @@ func TestOverlay_OpenAndCloseDialog(t *testing.T) {
 func TestOverlay_CloseDialog_NotFound(t *testing.T) {
 	overlay := NewOverlay()
 
-	dialog := NewCommandsDialog(80, 24)
+	dialog := NewHelpDialog(80, 24)
 	overlay.OpenDialog(dialog)
 
 	overlay.CloseDialog("non-existent")
@@ -56,7 +56,7 @@ func TestOverlay_View_Empty(t *testing.T) {
 func TestOverlay_View_WithDialog(t *testing.T) {
 	overlay := NewOverlay()
 
-	dialog := NewCommandsDialog(80, 24)
+	dialog := NewHelpDialog(80, 24)
 	overlay.OpenDialog(dialog)
 
 	view := overlay.View(80, 24)
@@ -66,14 +66,14 @@ func TestOverlay_View_WithDialog(t *testing.T) {
 }
 
 func TestCommandsDialog_ID(t *testing.T) {
-	dialog := NewCommandsDialog(80, 24)
+	dialog := NewHelpDialog(80, 24)
 	if dialog.ID() != HelpID {
 		t.Errorf("expected %s, got %s", HelpID, dialog.ID())
 	}
 }
 
 func TestCommandsDialog_HandleMsg_Escape(t *testing.T) {
-	dialog := NewCommandsDialog(80, 24)
+	dialog := NewHelpDialog(80, 24)
 
 	action := dialog.HandleMsg(nil)
 	if action != nil {
@@ -82,7 +82,7 @@ func TestCommandsDialog_HandleMsg_Escape(t *testing.T) {
 }
 
 func TestCommandsDialog_View(t *testing.T) {
-	dialog := NewCommandsDialog(80, 24)
+	dialog := NewHelpDialog(80, 24)
 
 	view := dialog.View(80, 24)
 	if view == "" {
@@ -91,7 +91,7 @@ func TestCommandsDialog_View(t *testing.T) {
 }
 
 func TestCommandsDialog_View_InvalidWidth(t *testing.T) {
-	dialog := NewCommandsDialog(80, 24)
+	dialog := NewHelpDialog(80, 24)
 
 	view := dialog.View(5, 24)
 	if view == "" {

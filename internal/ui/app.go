@@ -30,7 +30,6 @@ type Model struct {
 	dialogOverlay  *dialog.Overlay
 	dialogVisible  bool
 	viewport       viewport.Model
-	viewportReady  bool
 }
 
 func NewModel(s *store.Store) *Model {
@@ -38,7 +37,6 @@ func NewModel(s *store.Store) *Model {
 	ta.Placeholder = "Type message..."
 	ta.Focus()
 	ta.SetHeight(3)
-
 	ta.KeyMap.InsertNewline = key.NewBinding(
 		key.WithKeys("shift+enter"),
 		key.WithHelp("shift+enter", "newline"),
@@ -65,10 +63,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.textarea.SetWidth(m.width)
-
-		m.viewport = viewport.New(viewport.WithWidth(m.width), viewport.WithHeight(m.height-9))
+		m.viewport.SetWidth(m.width)
+		m.viewport.SetHeight(m.height - 9)
 		m.viewport.YPosition = 1
-		m.viewportReady = true
 		m.viewport.SetContent(m.buildMessagesContent())
 		m.viewport.GotoBottom()
 
@@ -80,7 +77,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
-
+		// Enter without shift sends message
 		if msg.Key().Code == tea.KeyEnter && (msg.Key().Mod&tea.ModShift) == 0 {
 			if !m.dialogVisible {
 				m.handleInput()
@@ -97,7 +94,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if msg.Key().Text == "/" && m.textarea.Value() == "" {
-			m.dialogOverlay.OpenDialog(dialog.NewCommandsDialog(m.width, m.height))
+			m.dialogOverlay.OpenDialog(dialog.NewHelpDialog(m.width, m.height))
 			m.dialogVisible = true
 			return m, nil
 		}
@@ -126,36 +123,29 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() tea.View {
-	title := m.renderTitle()
 	border := m.renderBorder()
-	messages := m.viewport.View()
-	inputContent := m.renderInput()
-	statusBar := m.renderStatusBar()
 
 	mainContent := lipgloss.JoinVertical(lipgloss.Left,
-		title,
+		m.renderTitle(),
 		border,
-		messages,
+		m.viewport.View(),
 		border,
-		inputContent,
+		m.renderInput(),
 		border,
-		statusBar,
+		m.renderStatusBar(),
 	)
 
-	var content string
+	content := mainContent
 	if m.dialogVisible {
 		dialogContent := m.dialogOverlay.View(m.width, m.height)
 		dialogLayer := lipgloss.NewLayer(dialogContent).
 			X((m.width - 55) / 2).
 			Y((m.height - 16) / 2).
 			Z(1)
-
 		content = lipgloss.NewCompositor(
 			lipgloss.NewLayer(mainContent),
 			dialogLayer,
 		).Render()
-	} else {
-		content = mainContent
 	}
 
 	v := tea.NewView(content)
@@ -252,9 +242,7 @@ func (m *Model) showError(msg string) {
 	}
 	m.store.AddMessage(errMsg)
 	m.loadMessages()
-	if m.viewportReady {
-		m.viewport.GotoBottom()
-	}
+	m.viewport.GotoBottom()
 }
 
 func (m *Model) sendMessage(text string) {
@@ -270,10 +258,8 @@ func (m *Model) sendMessage(text string) {
 	}
 	m.store.AddMessage(msg)
 	m.messages.PushBack(*msg)
-	if m.viewportReady {
-		m.viewport.SetContent(m.buildMessagesContent())
-		m.viewport.GotoBottom()
-	}
+	m.viewport.SetContent(m.buildMessagesContent())
+	m.viewport.GotoBottom()
 }
 
 func (m Model) renderTitle() string {
@@ -310,5 +296,5 @@ func (m Model) renderInput() string {
 func (m Model) renderStatusBar() string {
 	statusStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#6272A4"))
-	return statusStyle.Render(" / commands  ·  shift+enter newline  ·  ctrl+u scroll up  ·  ctrl+d scroll down  ·  ctrl+c quit")
+	return statusStyle.Render(" / commands  ·  ctrl+c quit")
 }
